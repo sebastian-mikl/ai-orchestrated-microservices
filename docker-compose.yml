@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # Echo Node - receives and forwards data
+  echo-node:
+    build: ./nodes/echo-node
+    ports:
+      - "8001:8000"
+    networks:
+      - network-mesh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Transform Node - processes/transforms data
+  transform-node:
+    build: ./nodes/transform-node
+    ports:
+      - "8002:8000"
+    networks:
+      - network-mesh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Storage Node - stores data
+  storage-node:
+    build: ./nodes/storage-node
+    ports:
+      - "8003:8000"
+    volumes:
+      - storage-data:/app/data
+    networks:
+      - network-mesh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Service Registry - RAG-powered service discovery
+  service-registry:
+    build: ./service-registry
+    ports:
+      - "8004:8000"
+    environment:
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+    volumes:
+      - registry-data:/app/service_registry_vectorstore
+      - registry-models:/app/models
+    networks:
+      - network-mesh
+    depends_on:
+      - echo-node
+      - transform-node
+      - storage-node
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Original Orchestrator - now optional/fallback
+  orchestrator:
+    build: ./orchestrator
+    ports:
+      - "8000:8000"
+    networks:
+      - network-mesh
+    depends_on:
+      - echo-node
+      - transform-node
+      - storage-node
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  storage-data:
+  registry-data:
+  registry-models:
+
+networks:
+  network-mesh:
+    driver: bridge
