@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Project - Service Orchestrator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 30px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        .input-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .input-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #555;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .execute-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: transform 0.2s;
+            width: 100%;
+        }
+
+        .execute-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .execute-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .results-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            border-left: 4px solid #28a745;
+        }
+
+        .results-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .status-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #17a2b8;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-card h3 {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .status-card .status {
+            font-weight: bold;
+            font-size: 1rem;
+        }
+
+        .status.healthy {
+            color: #28a745;
+        }
+
+        .status.error {
+            color: #dc3545;
+        }
+
+        .chain-display {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .chain-display h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .chain-nodes {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .chain-node {
+            background: #667eea;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+
+        .chain-arrow {
+            color: #666;
+            font-size: 1.2rem;
+        }
+
+        .execution-log {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin-bottom: 10px;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        .log-entry.success {
+            background: rgba(72, 187, 120, 0.2);
+        }
+
+        .log-entry.error {
+            background: rgba(245, 101, 101, 0.2);
+        }
+
+        .log-entry.info {
+            background: rgba(66, 153, 225, 0.2);
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .container {
+                margin: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>The Network Project</h1>
+            <p>AI-Powered Microservice Orchestration</p>
+        </div>
+
+        <div class="main-content">
+            <div class="input-section">
+                <h2>Command Center</h2>
+
+                <div class="form-group">
+                    <label for="command">Natural Language Command:</label>
+                    <textarea id="command" placeholder="Example: make text uppercase and store it">make text uppercase and store it</textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="data">Input Data:</label>
+                    <input type="text" id="data" placeholder="hello world" value="hello world">
+                </div>
+
+                <button class="execute-btn" onclick="executeCommand()">
+                    <span id="btn-text">Execute Orchestration</span>
+                </button>
+            </div>
+
+            <div class="results-section">
+                <h2>System Status & Results</h2>
+
+                <div class="status-grid" id="statusGrid">
+                    <div class="status-card">
+                        <h3>Service Registry</h3>
+                        <div class="status" id="registry-status">Checking...</div>
+                    </div>
+                    <div class="status-card">
+                        <h3>Echo Node</h3>
+                        <div class="status" id="echo-status">Checking...</div>
+                    </div>
+                    <div class="status-card">
+                        <h3>Transform Node</h3>
+                        <div class="status" id="transform-status">Checking...</div>
+                    </div>
+                    <div class="status-card">
+                        <h3>Storage Node</h3>
+                        <div class="status" id="storage-status">Checking...</div>
+                    </div>
+                </div>
+
+                <div class="chain-display" id="chainDisplay" style="display: none;">
+                    <h3>Generated Execution Chain</h3>
+                    <div class="chain-nodes" id="chainNodes"></div>
+                    <p id="chainReasoning" style="margin-top: 10px; color: #666; font-style: italic;"></p>
+                </div>
+
+                <div class="execution-log" id="executionLog">
+                    <div class="log-entry info">System ready. Enter a command to begin orchestration...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8004';
+
+        // Service endpoints for health checks
+        const services = {
+            'registry': { url: `${API_BASE}/health`, name: 'Service Registry' },
+            'echo': { url: 'http://localhost:8001/health', name: 'Echo Node' },
+            'transform': { url: 'http://localhost:8002/health', name: 'Transform Node' },
+            'storage': { url: 'http://localhost:8003/health', name: 'Storage Node' }
+        };
+
+        function addLogEntry(message, type = 'info') {
+            const log = document.getElementById('executionLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong> ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        async function checkServiceHealth() {
+            for (const [key, service] of Object.entries(services)) {
+                try {
+                    const response = await fetch(service.url);
+                    const statusElement = document.getElementById(`${key}-status`);
+
+                    if (response.ok) {
+                        statusElement.textContent = 'Healthy';
+                        statusElement.className = 'status healthy';
+                    } else {
+                        statusElement.textContent = 'Error';
+                        statusElement.className = 'status error';
+                    }
+                } catch (error) {
+                    const statusElement = document.getElementById(`${key}-status`);
+                    statusElement.textContent = 'Offline';
+                    statusElement.className = 'status error';
+                }
+            }
+        }
+
+        async function executeCommand() {
+            const command = document.getElementById('command').value.trim();
+            const data = document.getElementById('data').value.trim();
+            const button = document.querySelector('.execute-btn');
+            const btnText = document.getElementById('btn-text');
+
+            if (!command || !data) {
+                addLogEntry('Please enter both command and data', 'error');
+                return;
+            }
+
+            // Disable button and show loading
+            button.disabled = true;
+            btnText.textContent = 'Executing...';
+
+            addLogEntry(`Executing: "${command}" with data: "${data}"`, 'info');
+
+            try {
+                // First, generate the orchestration chain
+                const orchestrationResponse = await fetch(`${API_BASE}/orchestrate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        command: command,
+                        data: data
+                    })
+                });
+
+                if (!orchestrationResponse.ok) {
+                    throw new Error(`Orchestration failed: ${orchestrationResponse.status}`);
+                }
+
+                const orchestrationResult = await orchestrationResponse.json();
+
+                // Display the generated chain
+                displayGeneratedChain(orchestrationResult);
+
+                if (orchestrationResult.confidence < 0.5) {
+                    addLogEntry(`Low confidence (${orchestrationResult.confidence}): ${orchestrationResult.reasoning}`, 'error');
+                    return;
+                }
+
+                // Execute the chain
+                addLogEntry(`Executing chain: ${orchestrationResult.generated_chain.join(' → ')}`, 'info');
+
+                const executionResponse = await fetch(`${API_BASE}/execute`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        command: command,
+                        data: data
+                    })
+                });
+
+                if (!executionResponse.ok) {
+                    throw new Error(`Execution failed: ${executionResponse.status}`);
+                }
+
+                const executionResult = await executionResponse.json();
+
+                // Display execution results
+                displayExecutionResults(executionResult);
+
+            } catch (error) {
+                addLogEntry(`Error: ${error.message}`, 'error');
+                console.error('Execution error:', error);
+            } finally {
+                // Re-enable button
+                button.disabled = false;
+                btnText.textContent = 'Execute Orchestration';
+            }
+        }
+
+        function displayGeneratedChain(result) {
+            const chainDisplay = document.getElementById('chainDisplay');
+            const chainNodes = document.getElementById('chainNodes');
+            const chainReasoning = document.getElementById('chainReasoning');
+
+            chainNodes.innerHTML = '';
+
+            if (result.generated_chain && result.generated_chain.length > 0) {
+                result.generated_chain.forEach((node, index) => {
+                    if (index > 0) {
+                        const arrow = document.createElement('span');
+                        arrow.className = 'chain-arrow';
+                        arrow.textContent = '→';
+                        chainNodes.appendChild(arrow);
+                    }
+
+                    const nodeElement = document.createElement('span');
+                    nodeElement.className = 'chain-node';
+                    nodeElement.textContent = node;
+                    chainNodes.appendChild(nodeElement);
+                });
+
+                chainReasoning.textContent = result.reasoning;
+                chainDisplay.style.display = 'block';
+
+                addLogEntry(`Chain generated with confidence: ${result.confidence}`, 'success');
+            } else {
+                chainDisplay.style.display = 'none';
+                addLogEntry('No valid chain could be generated', 'error');
+            }
+        }
+
+        function displayExecutionResults(result) {
+            if (result.status === 'completed') {
+                addLogEntry(`✓ Execution completed successfully!`, 'success');
+                addLogEntry(`Final result: ${result.final_data}`, 'success');
+
+                // Show step-by-step results
+                result.execution_results.forEach((step, index) => {
+                    if (step.status === 'success') {
+                        addLogEntry(`Step ${index + 1} (${step.node}): Success`, 'success');
+                    } else {
+                        addLogEntry(`Step ${index + 1} (${step.node}): Failed - ${step.error}`, 'error');
+                    }
+                });
+            } else {
+                addLogEntry(`✗ Execution failed: ${result.status}`, 'error');
+                if (result.execution_results) {
+                    result.execution_results.forEach((step, index) => {
+                        addLogEntry(`Step ${index + 1} (${step.node}): ${step.status} - ${step.error || 'Success'}`,
+                                   step.status === 'success' ? 'success' : 'error');
+                    });
+                }
+            }
+        }
+
+        // Check service health on page load and every 30 seconds
+        checkServiceHealth();
+        setInterval(checkServiceHealth, 30000);
+
+        // Allow Enter key to execute command
+        document.getElementById('command').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                executeCommand();
+            }
+        });
+
+        document.getElementById('data').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                executeCommand();
+            }
+        });
+    </script>
+</body>
+</html>

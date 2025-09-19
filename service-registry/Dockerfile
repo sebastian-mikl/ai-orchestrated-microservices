@@ -1,4 +1,4 @@
-# Use this Dockerfile in each node directory
+# Use this Dockerfile in service-registry directory
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -14,8 +14,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code AND pattern framework
 COPY app.py .
+COPY interaction_patterns.py .
 
 # Expose port
 EXPOSE 8000

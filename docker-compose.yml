@@ -64,6 +64,13 @@ services:
       timeout: 10s
       retries: 3
 
+  web-interface:
+    build: ./nodes/web-interface
+    ports:
+      - "8080:8080"
+    depends_on:
+      - service-registry
+
   # Original Orchestrator - now optional/fallback
   orchestrator:
     build: ./orchestrator

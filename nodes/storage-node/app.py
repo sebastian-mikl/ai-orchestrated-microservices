@@ -3,7 +3,6 @@ from pydantic import BaseModel
 import json
 import os
 from datetime import datetime
-from typing import List
 from typing import List, Optional
 
 app = FastAPI(title="Storage Node", description="Stores data and provides retrieval")
@@ -73,7 +72,166 @@ async def node_info():
         "description": "Stores data with metadata and provides retrieval capabilities",
         "input_format": "string",
         "output_format": "string",
-        "storage_count": len(storage)
+        "storage_count": len(storage),
+        # NEW: Pattern declaration
+        "interaction_patterns": ["synchronous_persistent"],
+        "pattern_interfaces": {
+            "synchronous_persistent": {
+                "inputs": {"data": "string"},
+                "outputs": {"storage_id": "string", "confirmation": "string"},
+                "parameters": {
+                    "operation": {
+                        "type": "string",
+                        "options": ["store", "retrieve", "search", "list"],
+                        "default": "store"
+                    },
+                    "search_query": {
+                        "type": "string",
+                        "required_for": ["search"]
+                    },
+                    "item_id": {
+                        "type": "string",
+                        "required_for": ["retrieve"]
+                    }
+                }
+            }
+        }
+    }
+
+@app.get("/contract")
+async def get_contract():
+    return {
+        "service_metadata": {
+            "service_id": "storage-node",
+            "version": "1.0.0",
+            "pattern": "synchronous_persistent",
+            "description": "Provides persistent storage with metadata and retrieval capabilities",
+            "maintainer": "system",
+            "cost_per_execution": 0.005
+        },
+        "interface_contract": {
+            "inputs": {
+                "data": {
+                    "type": "string",
+                    "constraints": {
+                        "max_length": 100000,
+                        "encoding": "utf-8",
+                        "required": True
+                    },
+                    "description": "Data to be stored persistently"
+                },
+                "metadata": {
+                    "type": "object",
+                    "required": False,
+                    "description": "Additional metadata to store with the data"
+                },
+                "operation": {
+                    "type": "enum",
+                    "values": ["store", "retrieve", "search", "list"],
+                    "default": "store",
+                    "required": False,
+                    "description": "Storage operation to perform"
+                },
+                "item_id": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Required for retrieve operation"
+                },
+                "search_query": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Required for search operation"
+                }
+            },
+            "outputs": {
+                "storage_id": {
+                    "type": "string",
+                    "format": "uuid_like",
+                    "description": "Unique identifier for stored item"
+                },
+                "confirmation": {
+                    "type": "string",
+                    "description": "Human-readable confirmation message"
+                },
+                "data": {
+                    "type": "string",
+                    "description": "Retrieved data (for retrieve operations)"
+                },
+                "results": {
+                    "type": "array",
+                    "description": "Search results (for search operations)"
+                },
+                "metadata": {
+                    "type": "object",
+                    "properties": {
+                        "processed_by": {"type": "string"},
+                        "pattern_used": {"type": "string"},
+                        "stored_id": {"type": "string"},
+                        "storage_size": {"type": "integer"},
+                        "timestamp": {"type": "string"}
+                    }
+                }
+            }
+        },
+        "behavioral_guarantees": {
+            "deterministic": False,  # Storage IDs are unique/random
+            "side_effects": True,    # Modifies persistent storage
+            "idempotent": False,     # Multiple stores create multiple records
+            "data_preservation": "durable_storage",
+            "execution_safety": "data_consistent"
+        },
+        "resource_requirements": {
+            "max_execution_time": "200ms",
+            "memory_limit": "100MB",
+            "cpu_intensive": False,
+            "network_calls": False,
+            "disk_space": True
+        },
+        "compatibility_rules": {
+            "can_chain_to": ["validation_services", "notification_services"],
+            "cannot_chain_to": ["streaming_services"],
+            "requires_preprocessing": [],
+            "output_compatible_with": ["string_consumers", "id_processors"],
+            "input_compatible_with": ["string_producers", "text_processors", "transform_services"]
+        },
+        "persistence_guarantees": {
+            "durability": "file_system_backed",
+            "consistency": "immediate",
+            "backup_strategy": "local_json",
+            "data_retention": "indefinite"
+        },
+        "capabilities": {
+            "operations": ["store", "retrieve", "search", "list"],
+            "storage_types": ["text", "metadata"],
+            "query_types": ["exact_match", "substring_search"],
+            "indexing": "basic_text_search"
+        },
+        "error_handling": {
+            "failure_modes": ["disk_full", "permission_error", "item_not_found", "invalid_search"],
+            "recovery_strategy": "transaction_rollback",
+            "rollback_capable": True
+        }
+    }
+
+
+
+@app.get("/patterns")
+async def get_supported_patterns():
+    """New endpoint to explicitly expose pattern support"""
+    return {
+        "node_id": "storage-node",
+        "supported_patterns": ["synchronous_persistent"],
+        "pattern_details": {
+            "synchronous_persistent": {
+                "description": "Database-like operations with immediate response",
+                "interface": "persistent_api",
+                "typical_duration": "milliseconds",
+                "inputs": {"data": "string"},
+                "outputs": {"storage_id": "string", "confirmation": "string"},
+                "operations": ["store", "retrieve", "search", "list"],
+                "persistence": "file_based_json"
+            }
+        }
     }
 
 
@@ -101,6 +259,7 @@ async def process_data(request: NodeRequest):
         status="success",
         metadata={
             "processed_by": "storage-node",
+            "pattern_used": "synchronous_persistent",
             "stored_id": item_id,
             "storage_size": len(storage),
             **request.metadata
@@ -109,6 +268,116 @@ async def process_data(request: NodeRequest):
 
     print(f"Stored item {item_id}, total items: {len(storage)}")
     return response
+
+
+# NEW: Pattern-specific endpoint for synchronous_persistent
+@app.post("/execute")
+async def execute_synchronous_persistent(
+        inputs: dict,
+        parameters: dict = {}
+):
+    """Direct pattern-based execution for synchronous_persistent"""
+
+    operation = parameters.get("operation", "store")
+
+    if operation == "store":
+        if "data" not in inputs:
+            return {"error": "Missing required input: data", "pattern": "synchronous_persistent"}
+
+        # Generate unique ID
+        item_id = f"item_{len(storage) + 1}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Create storage item
+        stored_item = StoredItem(
+            id=item_id,
+            data=inputs["data"],
+            timestamp=datetime.now().isoformat(),
+            metadata=parameters.get("metadata", {})
+        )
+
+        # Store the item
+        storage.append(stored_item.dict())
+        save_storage()
+
+        return {
+            "outputs": {
+                "storage_id": item_id,
+                "confirmation": f"Data stored successfully as {item_id}"
+            },
+            "metadata": {
+                "node_id": "storage-node",
+                "pattern": "synchronous_persistent",
+                "operation": "store",
+                "storage_size": len(storage),
+                "execution_time": "< 10ms"
+            }
+        }
+
+    elif operation == "retrieve":
+        item_id = parameters.get("item_id")
+        if not item_id:
+            return {"error": "Missing required parameter: item_id", "pattern": "synchronous_persistent"}
+
+        for item in storage:
+            if item["id"] == item_id:
+                return {
+                    "outputs": {
+                        "data": item["data"],
+                        "storage_id": item["id"]
+                    },
+                    "metadata": {
+                        "node_id": "storage-node",
+                        "pattern": "synchronous_persistent",
+                        "operation": "retrieve",
+                        "timestamp": item["timestamp"]
+                    }
+                }
+
+        return {"error": f"Item {item_id} not found", "pattern": "synchronous_persistent"}
+
+    elif operation == "search":
+        search_query = parameters.get("search_query")
+        if not search_query:
+            return {"error": "Missing required parameter: search_query", "pattern": "synchronous_persistent"}
+
+        results = []
+        for item in storage:
+            if search_query.lower() in item["data"].lower():
+                results.append({
+                    "storage_id": item["id"],
+                    "data": item["data"],
+                    "timestamp": item["timestamp"]
+                })
+
+        return {
+            "outputs": {
+                "results": results,
+                "count": len(results)
+            },
+            "metadata": {
+                "node_id": "storage-node",
+                "pattern": "synchronous_persistent",
+                "operation": "search",
+                "search_query": search_query
+            }
+        }
+
+    elif operation == "list":
+        return {
+            "outputs": {
+                "items": storage,
+                "count": len(storage)
+            },
+            "metadata": {
+                "node_id": "storage-node",
+                "pattern": "synchronous_persistent",
+                "operation": "list",
+                "total_items": len(storage)
+            }
+        }
+
+    else:
+        return {"error": f"Unknown operation: {operation}", "pattern": "synchronous_persistent"}
 
 
 @app.get("/storage/list")
