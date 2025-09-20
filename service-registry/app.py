@@ -486,6 +486,20 @@ async def fetch_service_contract(service_url: str, contract_endpoint: str = "/co
 # Initialize on startup
 initialize_rag_system()
 
+@app.post("/register")
+async def register_service(service: ServiceRegistration):
+    """Services auto-register on startup"""
+    service_registry[service.node_id] = service.dict()
+    contract = await fetch_service_contract(service.url)
+    if contract:
+        contract_registry.register_contract(service.node_id, contract)
+    return {"status": "registered"}
+
+@app.delete("/unregister/{service_id}")
+async def unregister_service(service_id: str):
+    """Remove services dynamically"""
+    # Cleanup logic
+
 
 # API Endpoints
 @app.on_event("startup")

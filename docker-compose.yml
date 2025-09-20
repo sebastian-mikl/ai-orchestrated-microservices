@@ -64,13 +64,6 @@ services:
       timeout: 10s
       retries: 3
 
-  web-interface:
-    build: ./nodes/web-interface
-    ports:
-      - "8080:8080"
-    depends_on:
-      - service-registry
-
   # Original Orchestrator - now optional/fallback
   orchestrator:
     build: ./orchestrator
@@ -82,6 +75,45 @@ services:
       - echo-node
       - transform-node
       - storage-node
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # File Processor Service
+  file-processor:
+    build: ./nodes/file-processor
+    ports:
+      - "8005:8000"
+    networks:
+      - network-mesh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # External API Service
+  external-api:
+    build: ./nodes/external-api
+    ports:
+      - "8006:8000"
+    networks:
+      - network-mesh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Data Validator Service
+  data-validator:
+    build: ./nodes/data-validator
+    ports:
+      - "8007:8000"
+    networks:
+      - network-mesh
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
