@@ -1,11 +1,80 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
 import json
 import os
+import time
 from datetime import datetime
-from typing import List, Optional
+from fastapi import FastAPI
+from pydantic import BaseModel
+import requests
+from typing import Optional
+import asyncio
+import time
+import requests
+import threading
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Storage Node", description="Stores data and provides retrieval")
+def delayed_registration():
+    """Run registration in a separate thread after server starts"""
+    time.sleep(5)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(register_with_service_registry())
+    loop.close()
+
+async def register_with_service_registry():
+    """Register this service with the service registry"""
+    try:
+        await asyncio.sleep(5)
+
+        info_response = requests.get("http://localhost:8000/info", timeout=5)
+        if info_response.status_code == 200:
+            info_data = info_response.json()
+
+            registration_data = {
+                "node_id": info_data["node_id"],
+                "url": f"http://{info_data['node_id']}:8000",
+                "capabilities": [
+                    {
+                        "name": cap,
+                        "description": f"Service capability: {cap}",
+                        "input_format": info_data.get("input_format", "string"),
+                        "output_format": info_data.get("output_format", "storage_id"),
+                        "examples": []
+                    } for cap in info_data.get("capabilities", [])
+                ],
+                "description": info_data.get("description", "Storage service"),
+                "tags": info_data.get("tags", []),
+                "interaction_patterns": info_data.get("interaction_patterns", [])
+            }
+
+            registry_response = requests.post(
+                "http://service-registry:8000/register",
+                json=registration_data,
+                timeout=10
+            )
+
+            if registry_response.status_code == 200:
+                print("Successfully registered storage-node with service registry")
+            else:
+                print(f"Failed to register: {registry_response.status_code}")
+
+    except Exception as e:
+        print(f"Registration failed: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Storage Node service starting up...")
+    registration_thread = threading.Thread(target=delayed_registration, daemon=True)
+    registration_thread.start()
+    yield
+    print("Storage Node service shutting down...")
+
+app = FastAPI(
+    title="storage-node",
+    description="Persistent storage service",
+    lifespan=lifespan
+)
+
 
 
 class NodeRequest(BaseModel):
@@ -64,16 +133,35 @@ async def health_check():
     return {"status": "healthy", "node_type": "storage"}
 
 
+# Replace the /info endpoint in nodes/storage-node/app.py
+
 @app.get("/info")
 async def node_info():
+    """Standardized service discovery information for Storage Node"""
     return {
+        # REQUIRED FIELDS
         "node_id": "storage-node",
-        "capabilities": ["store", "retrieve", "list", "search"],
-        "description": "Stores data with metadata and provides retrieval capabilities",
+        "version": "1.0.0",
+        "status": "healthy",
+        "description": "Provides persistent storage with metadata and retrieval capabilities using file-based JSON storage",
+
+        # CAPABILITY DISCOVERY
+        "capabilities": [
+            "persistent_storage",
+            "data_persistence",
+            "data_retrieval",
+            "metadata_storage",
+            "search_functionality",
+            "data_indexing"
+        ],
+        "tags": ["storage", "persistence", "database", "retrieval"],
+
+        # DATA CONTRACTS
         "input_format": "string",
-        "output_format": "string",
-        "storage_count": len(storage),
-        # NEW: Pattern declaration
+        "output_format": "storage_id",
+        "supported_operations": ["store", "retrieve", "search", "list"],
+
+        # INTERACTION PATTERNS
         "interaction_patterns": ["synchronous_persistent"],
         "pattern_interfaces": {
             "synchronous_persistent": {
@@ -95,6 +183,51 @@ async def node_info():
                     }
                 }
             }
+        },
+
+        # SERVICE METADATA
+        "endpoints": {
+            "health": "/health",
+            "process": "/process",
+            "execute": "/execute",
+            "contract": "/contract",
+            "info": "/info",
+            "patterns": "/patterns",
+            "storage/list": "/storage/list",
+            "storage/search": "/storage/search/{query}",
+            "storage/clear": "/storage/clear"
+        },
+        "dependencies": [],  # No dependencies
+        "provides_to": ["notification-services", "reporting-services"],
+
+        # OPERATIONAL INFO
+        "resource_requirements": {
+            "cpu": "low",
+            "memory": "100MB",
+            "disk": "persistent"
+        },
+        "scaling": {
+            "can_scale_horizontal": False,  # Shared storage limitation
+            "max_instances": 1,
+            "startup_time": "5s"
+        },
+
+        # PROCESSING CHARACTERISTICS
+        "processing_type": "persistence",
+        "data_transformation": "metadata_enrichment",
+        "typical_use_cases": [
+            "Data archival",
+            "Session storage",
+            "Audit logging",
+            "Result caching"
+        ],
+        "storage_characteristics": {
+            "storage_type": "file_based_json",
+            "persistence": "durable",
+            "backup_strategy": "local_file",
+            "search_capability": "substring_search",
+            "max_storage_size": "unlimited",
+            "data_retention": "indefinite"
         }
     }
 

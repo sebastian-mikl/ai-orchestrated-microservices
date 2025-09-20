@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Any, Set
@@ -25,7 +27,6 @@ except ImportError:
     print("Warning: interaction_patterns.py not found, using basic pattern support")
     INTERACTION_PATTERNS = {}
 
-app = FastAPI(title="Service Registry", description="Contract-based service discovery and orchestration")
 
 
 # Models
@@ -358,6 +359,130 @@ vector_store_path = "service_registry_vectorstore"
 pattern_registry = PatternRegistry() if 'PatternRegistry' in globals() else None
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events"""
+    # Startup
+    print("Service Registry starting up...")
+    print("Waiting for services to auto-register...")
+
+    # Remove all the hardcoded service registration code
+    # Services will now register themselves
+
+    print("Service Registry ready - services will register automatically")
+    yield
+
+    # Shutdown
+    print("Service Registry shutting down...")
+
+app = FastAPI(
+    title="Service Registry",
+    description="Contract-based service discovery and orchestration",
+    lifespan=lifespan)
+# Add this /info endpoint to service-registry/app.py
+
+@app.get("/info")
+async def node_info():
+    """Standardized service discovery information for Service Registry"""
+    return {
+        # REQUIRED FIELDS
+        "node_id": "service-registry",
+        "version": "1.0.0",
+        "status": "healthy",
+        "description": "AI-powered service discovery and orchestration using LangChain RAG with contract-based verification",
+
+        # CAPABILITY DISCOVERY
+        "capabilities": [
+            "service_discovery",
+            "ai_orchestration",
+            "contract_verification",
+            "chain_generation",
+            "rag_search",
+            "service_registration"
+        ],
+        "tags": ["registry", "orchestration", "ai", "discovery", "contracts"],
+
+        # DATA CONTRACTS
+        "input_format": "natural_language_command",
+        "output_format": "execution_result",
+        "supported_operations": ["orchestrate", "execute", "search", "register"],
+
+        # INTERACTION PATTERNS
+        "interaction_patterns": ["synchronous_stateless", "asynchronous_stateless"],
+        "pattern_interfaces": {
+            "synchronous_stateless": {
+                "inputs": {
+                    "command": "string",
+                    "data": "any"
+                },
+                "outputs": {
+                    "generated_chain": "array",
+                    "execution_results": "array",
+                    "final_data": "any"
+                },
+                "parameters": {
+                    "method": {
+                        "type": "string",
+                        "options": ["contract_based", "rag_based"],
+                        "default": "contract_based"
+                    }
+                }
+            }
+        },
+
+        # SERVICE METADATA
+        "endpoints": {
+            "health": "/health",
+            "orchestrate": "/orchestrate",
+            "execute": "/execute",
+            "register": "/register",
+            "unregister": "/unregister/{service_id}",
+            "services": "/services",
+            "contracts": "/contracts",
+            "services/health": "/services/health",
+            "services/cleanup": "/services/cleanup",
+            "info": "/info"
+        },
+        "dependencies": ["claude_api", "huggingface_embeddings"],
+        "provides_to": ["all_services"],  # Central orchestrator
+
+        # OPERATIONAL INFO
+        "resource_requirements": {
+            "cpu": "high",
+            "memory": "1GB",  # For vector embeddings
+            "disk": "persistent"  # For vector store
+        },
+        "scaling": {
+            "can_scale_horizontal": False,  # Central registry
+            "max_instances": 1,
+            "startup_time": "30s"  # Vector loading time
+        },
+
+        # PROCESSING CHARACTERISTICS
+        "processing_type": "orchestration",
+        "data_transformation": "command_to_execution_chain",
+        "typical_use_cases": [
+            "Natural language command processing",
+            "Service chain orchestration",
+            "Dynamic service discovery",
+            "Contract-based verification"
+        ],
+        "ai_capabilities": {
+            "nlp_model": "claude-3-5-sonnet",
+            "embedding_model": "all-MiniLM-L6-v2",
+            "vector_store": "FAISS",
+            "confidence_scoring": True,
+            "semantic_search": True,
+            "contract_verification": True
+        },
+        "registry_stats": {
+            "registered_services": len(service_registry),
+            "registered_contracts": len(contract_registry.contracts) if 'contract_registry' in globals() else 0,
+            "total_orchestrations": 0,  # Could track this
+            "average_confidence": 0.85  # Could calculate this
+        }
+    }
+
 def initialize_rag_system():
     """Initialize the RAG system for fallback scenarios"""
     global embeddings, vectorstore, llm
@@ -466,6 +591,99 @@ def parse_command_requirements(command: str) -> Set[str]:
     return requirements
 
 
+# Add these endpoints to service-registry/app.py
+
+@app.delete("/unregister/{service_id}")
+async def unregister_service(service_id: str):
+    """Unregister a service"""
+    if service_id in service_registry:
+        del service_registry[service_id]
+
+        # Also remove from contract registry
+        if service_id in contract_registry.contracts:
+            del contract_registry.contracts[service_id]
+            contract_registry.compatibility_cache.clear()
+
+        print(f"Unregistered service: {service_id}")
+        return {"status": "unregistered", "service_id": service_id}
+    else:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+
+@app.get("/services/health")
+async def check_all_services_health():
+    """Check health status of all registered services"""
+    health_status = {}
+
+    for service_id, service_info in service_registry.items():
+        try:
+            service_url = service_info["url"]
+            health_endpoint = service_info.get("health_endpoint", "/health")
+
+            response = requests.get(
+                f"{service_url}{health_endpoint}",
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                health_status[service_id] = {
+                    "status": "healthy",
+                    "response_time": response.elapsed.total_seconds(),
+                    "details": response.json()
+                }
+            else:
+                health_status[service_id] = {
+                    "status": "unhealthy",
+                    "http_status": response.status_code,
+                    "url": f"{service_url}{health_endpoint}"
+                }
+
+        except Exception as e:
+            health_status[service_id] = {
+                "status": "unreachable",
+                "error": str(e),
+                "url": service_info.get("url", "unknown")
+            }
+
+    # Remove unreachable services after multiple failures
+    unreachable_services = [
+        service_id for service_id, status in health_status.items()
+        if status["status"] == "unreachable"
+    ]
+
+    return {
+        "total_services": len(service_registry),
+        "healthy_services": len([s for s in health_status.values() if s["status"] == "healthy"]),
+        "unhealthy_services": len([s for s in health_status.values() if s["status"] == "unhealthy"]),
+        "unreachable_services": len(unreachable_services),
+        "details": health_status,
+        "unreachable_will_be_removed": unreachable_services
+    }
+
+
+@app.post("/services/cleanup")
+async def cleanup_unreachable_services():
+    """Remove services that are no longer reachable"""
+    health_check = await check_all_services_health()
+    removed_services = []
+
+    for service_id, status in health_check["details"].items():
+        if status["status"] == "unreachable":
+            if service_id in service_registry:
+                del service_registry[service_id]
+                removed_services.append(service_id)
+
+            if service_id in contract_registry.contracts:
+                del contract_registry.contracts[service_id]
+
+    contract_registry.compatibility_cache.clear()
+
+    return {
+        "removed_services": removed_services,
+        "remaining_services": len(service_registry)
+    }
+
+
 async def fetch_service_contract(service_url: str, contract_endpoint: str = "/contract") -> Optional[Dict]:
     """Fetch contract from a service"""
     try:
@@ -486,14 +704,47 @@ async def fetch_service_contract(service_url: str, contract_endpoint: str = "/co
 # Initialize on startup
 initialize_rag_system()
 
+
+# Replace the /register endpoint in service-registry/app.py
+
 @app.post("/register")
 async def register_service(service: ServiceRegistration):
     """Services auto-register on startup"""
-    service_registry[service.node_id] = service.dict()
+    print(f"Registering service: {service.node_id}")
+
+    # Store service info
+    service_registry[service.node_id] = service.model_dump()
+
+    # Fetch contract from the service
     contract = await fetch_service_contract(service.url)
     if contract:
-        contract_registry.register_contract(service.node_id, contract)
-    return {"status": "registered"}
+        success = contract_registry.register_contract(service.node_id, contract)
+        if success:
+            print(f"Successfully registered contract for {service.node_id}")
+        else:
+            print(f"Failed to register contract for {service.node_id}")
+    else:
+        print(f"Warning: Could not fetch contract for {service.node_id}")
+
+    print(f"Service registry now has {len(service_registry)} services")
+    print(f"Contract registry now has {len(contract_registry.contracts)} contracts")
+
+    return {"status": "registered", "node_id": service.node_id}
+
+
+# Also add this debug endpoint to check what's happening:
+
+@app.get("/debug/registration")
+async def debug_registration():
+    """Debug endpoint to see registration status"""
+    return {
+        "services_registered": len(service_registry),
+        "contracts_registered": len(contract_registry.contracts),
+        "service_list": list(service_registry.keys()),
+        "contract_list": list(contract_registry.contracts.keys()),
+        "service_details": service_registry,
+        "contract_details": {k: "contract_exists" for k in contract_registry.contracts.keys()}
+    }
 
 @app.delete("/unregister/{service_id}")
 async def unregister_service(service_id: str):
@@ -502,71 +753,7 @@ async def unregister_service(service_id: str):
 
 
 # API Endpoints
-@app.on_event("startup")
-async def startup_event():
-    """Register default services and fetch their contracts"""
 
-    default_services = [
-        ServiceRegistration(
-            node_id="echo-node",
-            url="http://echo-node:8000",
-            description="Receives and forwards data without modification",
-            capabilities=[
-                ServiceCapability(
-                    name="echo",
-                    description="Passes data through unchanged",
-                    input_format="string",
-                    output_format="string",
-                    examples=["echo hello world", "pass through this text"]
-                )
-            ],
-            tags=["utility", "passthrough"],
-            interaction_patterns=["synchronous_stateless"]
-        ),
-        ServiceRegistration(
-            node_id="transform-node",
-            url="http://transform-node:8000",
-            description="Transforms text data in various ways",
-            capabilities=[
-                ServiceCapability(
-                    name="uppercase",
-                    description="Converts text to uppercase",
-                    input_format="string",
-                    output_format="string",
-                    examples=["make this uppercase", "convert to caps", "transform text"]
-                )
-            ],
-            tags=["text", "transformation"],
-            interaction_patterns=["synchronous_stateless"]
-        ),
-        ServiceRegistration(
-            node_id="storage-node",
-            url="http://storage-node:8000",
-            description="Stores data with metadata and provides retrieval",
-            capabilities=[
-                ServiceCapability(
-                    name="store",
-                    description="Saves data to persistent storage",
-                    input_format="string",
-                    output_format="storage_id",
-                    examples=["save this data", "store text", "persist information"]
-                )
-            ],
-            tags=["storage", "persistence", "database"],
-            interaction_patterns=["synchronous_persistent"]
-        )
-    ]
-
-    # Register each service and fetch its contract
-    for service in default_services:
-        service_registry[service.node_id] = service.dict()
-
-        # Fetch and register contract
-        contract = await fetch_service_contract(service.url)
-        if contract:
-            contract_registry.register_contract(service.node_id, contract)
-        else:
-            print(f"Warning: Could not fetch contract for {service.node_id}")
 
 
 @app.get("/health")
@@ -724,6 +911,8 @@ async def orchestrate_command(request: OrchestrationRequest):
 async def execute_orchestrated_chain(request: OrchestrationRequest):
     """Legacy execution endpoint - redirects to contract-verified"""
     return await execute_contract_verified_chain(request)
+
+
 
 
 if __name__ == "__main__":

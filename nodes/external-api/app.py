@@ -1,12 +1,86 @@
 # nodes/external-api/app.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import requests
 import json
 import time
 from typing import Dict, Any, Optional
+import asyncio
+import requests
+from contextlib import asynccontextmanager
+import threading
 
-app = FastAPI(title="External API Service", description="Calls external APIs for weather, currency, and other data")
+# Replace the registration section in external-api with this working pattern:
+
+import threading
+
+
+def delayed_registration():
+    """Run registration in a separate thread after server starts"""
+    time.sleep(5)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(register_with_service_registry())
+    loop.close()
+
+
+async def register_with_service_registry():
+    """Register this service with the service registry"""
+    try:
+        await asyncio.sleep(5)
+
+        info_response = requests.get("http://localhost:8000/info", timeout=5)
+        if info_response.status_code == 200:
+            info_data = info_response.json()
+
+            registration_data = {
+                "node_id": info_data["node_id"],
+                "url": f"http://{info_data['node_id']}:8000",
+                "capabilities": [
+                    {
+                        "name": cap,
+                        "description": f"Service capability: {cap}",
+                        "input_format": info_data.get("input_format", "any_data"),
+                        "output_format": info_data.get("output_format", "json_response"),
+                        "examples": []
+                    } for cap in info_data.get("capabilities", [])
+                ],
+                "description": info_data.get("description", "External API service"),
+                "tags": info_data.get("tags", []),
+                "interaction_patterns": info_data.get("interaction_patterns", [])
+            }
+
+            registry_response = requests.post(
+                "http://service-registry:8000/register",
+                json=registration_data,
+                timeout=10
+            )
+
+            if registry_response.status_code == 200:
+                print("Successfully registered external-api with service registry")  # Fixed message
+            else:
+                print(f"Failed to register: {registry_response.status_code}")
+
+    except Exception as e:
+        print(f"Registration failed: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("External API service starting up...")
+    registration_thread = threading.Thread(target=delayed_registration, daemon=True)
+    registration_thread.start()
+    yield
+    print("External API service shutting down...")
+
+# Update FastAPI app initialization
+app = FastAPI(
+    title="external-api",
+    description="connects to external apis",
+    lifespan=lifespan  # Add this!
+)
+
+
 
 
 class NodeRequest(BaseModel):
@@ -120,16 +194,106 @@ async def get_contract():
     }
 
 
+# Replace the /info endpoint in nodes/external-api/app.py
+
 @app.get("/info")
 async def node_info():
+    """Standardized service discovery information for External API Service"""
     return {
+        # REQUIRED FIELDS
         "node_id": "external-api",
-        "capabilities": ["weather_api", "currency_api", "stock_api", "general_apis"],
-        "description": "Calls external APIs and returns structured data",
+        "version": "1.0.0",
+        "status": "healthy",
+        "description": "Calls external APIs for weather, currency rates, stock prices, quotes, and other real-time data",
+
+        # CAPABILITY DISCOVERY
+        "capabilities": [
+            "external_api_calls",
+            "weather_data",
+            "currency_exchange",
+            "stock_prices",
+            "random_quotes",
+            "cat_facts",
+            "real_time_data"
+        ],
+        "tags": ["api", "external", "data", "weather", "currency", "stocks"],
+
+        # DATA CONTRACTS
         "input_format": "api_parameters",
         "output_format": "json_response",
+        "supported_operations": ["fetch", "query", "retrieve"],
+
+        # INTERACTION PATTERNS
         "interaction_patterns": ["synchronous_stateless"],
-        "supported_apis": ["weather", "currency", "stock_price", "random_quote", "cat_fact"]
+        "pattern_interfaces": {
+            "synchronous_stateless": {
+                "inputs": {
+                    "api_endpoint": "string",
+                    "query_params": "object",
+                    "location": "string"
+                },
+                "outputs": {
+                    "api_response": "json_object",
+                    "status_code": "integer",
+                    "response_time": "float"
+                },
+                "parameters": {
+                    "api_endpoint": {
+                        "type": "string",
+                        "options": ["weather", "currency", "stock_price", "random_quote", "cat_fact"],
+                        "default": "weather"
+                    }
+                }
+            }
+        },
+
+        # SERVICE METADATA
+        "endpoints": {
+            "health": "/health",
+            "process": "/process",
+            "execute": "/execute",
+            "contract": "/contract",
+            "info": "/info",
+            "apis": "/apis"
+        },
+        "dependencies": ["external_internet"],  # Requires internet access
+        "provides_to": ["storage-services", "validation-services", "file-processors"],
+
+        # OPERATIONAL INFO
+        "resource_requirements": {
+            "cpu": "low",
+            "memory": "128MB",
+            "disk": "none"
+        },
+        "scaling": {
+            "can_scale_horizontal": True,
+            "max_instances": 5,  # Limited by API rate limits
+            "startup_time": "4s"
+        },
+
+        # PROCESSING CHARACTERISTICS
+        "processing_type": "external_integration",
+        "data_transformation": "api_response_formatting",
+        "typical_use_cases": [
+            "Real-time data fetching",
+            "External service integration",
+            "Market data retrieval",
+            "Weather information"
+        ],
+        "api_capabilities": {
+            "available_apis": ["weather", "currency", "stock_price", "random_quote", "cat_fact"],
+            "response_formats": ["json"],
+            "rate_limits": {
+                "weather": "60/hour",
+                "currency": "unlimited_mock",
+                "stock_price": "unlimited_mock",
+                "random_quote": "100/hour",
+                "cat_fact": "100/hour"
+            },
+            "timeout": "10s",
+            "retry_strategy": "none",
+            "caching": False
+        }
     }
 
 

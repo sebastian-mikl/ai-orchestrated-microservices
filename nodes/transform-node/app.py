@@ -1,9 +1,109 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+import asyncio
 import requests
-import os
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Transform Node", description="Transforms text data")
+# Add this to ANY service's app.py (at the top after imports, before app = FastAPI())
+
+import asyncio
+import requests
+import time
+from contextlib import asynccontextmanager
+
+# Add this to ANY service's app.py (at the top after imports, before app = FastAPI())
+
+import asyncio
+import requests
+import time
+from contextlib import asynccontextmanager
+
+# At the top of transform-node app.py, replace everything before class NodeRequest with:
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+import requests
+import asyncio
+import time
+from contextlib import asynccontextmanager
+
+
+async def register_with_service_registry():
+    """Register this service with the service registry"""
+    try:
+        for i in range(30):
+            try:
+                response = requests.get("http://service-registry:8000/health", timeout=5)
+                if response.status_code == 200:
+                    print("Service registry is ready")
+                    break
+            except:
+                pass
+            print(f"Waiting for service registry... ({i + 1}/30)")
+            await asyncio.sleep(2)
+        else:
+            print("WARNING: Service registry not available")
+            return False
+
+        await asyncio.sleep(5)
+
+        info_response = requests.get("http://localhost:8000/info", timeout=5)
+        if info_response.status_code != 200:
+            print(f"Failed to get service info: {info_response.status_code}")
+            return False
+
+        info_data = info_response.json()
+        registration_data = {
+            "node_id": info_data["node_id"],
+            "url": f"http://{info_data['node_id']}:8000",
+            "capabilities": [
+                {
+                    "name": cap,
+                    "description": f"Service capability: {cap}",
+                    "input_format": info_data.get("input_format", "string"),
+                    "output_format": info_data.get("output_format", "string"),
+                    "examples": []
+                } for cap in info_data.get("capabilities", [])
+            ],
+            "description": info_data.get("description", "Transform service"),
+            "tags": info_data.get("tags", []),
+            "interaction_patterns": info_data.get("interaction_patterns", [])
+        }
+
+        registry_response = requests.post(
+            "http://service-registry:8000/register",
+            json=registration_data,
+            timeout=10
+        )
+
+        if registry_response.status_code == 200:
+            print(f"Successfully registered transform-node with service registry")
+            return True
+        else:
+            print(f"Failed to register: {registry_response.status_code}")
+            return False
+
+    except Exception as e:
+        print(f"Registration failed: {e}")
+        return False
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Transform Node starting up...")
+    registration_success = await register_with_service_registry()
+    if not registration_success:
+        print("WARNING: Failed to register")
+    yield
+    print("Transform Node shutting down...")
+
+
+app = FastAPI(
+    title="Transform Node",
+    description="Transforms text data in various ways",
+    lifespan=lifespan
+)
+
 
 
 class NodeRequest(BaseModel):
@@ -121,15 +221,35 @@ async def get_contract():
         }
     }
 
+
+# Replace the /info endpoint in nodes/transform-node/app.py
+
 @app.get("/info")
 async def node_info():
+    """Standardized service discovery information for Transform Node"""
     return {
+        # REQUIRED FIELDS
         "node_id": "transform-node",
-        "capabilities": ["transform", "uppercase", "lowercase", "reverse"],
-        "description": "Transforms text data in various ways",
+        "version": "1.0.0",
+        "status": "healthy",
+        "description": "Transforms text data using various string operations including uppercase, lowercase, and reverse",
+
+        # CAPABILITY DISCOVERY
+        "capabilities": [
+            "text_transformation",
+            "uppercase_conversion",
+            "lowercase_conversion",
+            "text_reversal",
+            "string_manipulation"
+        ],
+        "tags": ["text", "transformation", "processing", "string"],
+
+        # DATA CONTRACTS
         "input_format": "string",
         "output_format": "string",
-        # NEW: Pattern declaration
+        "supported_operations": ["uppercase", "lowercase", "reverse"],
+
+        # INTERACTION PATTERNS
         "interaction_patterns": ["synchronous_stateless"],
         "pattern_interfaces": {
             "synchronous_stateless": {
@@ -143,6 +263,45 @@ async def node_info():
                     }
                 }
             }
+        },
+
+        # SERVICE METADATA
+        "endpoints": {
+            "health": "/health",
+            "process": "/process",
+            "execute": "/execute",
+            "contract": "/contract",
+            "info": "/info",
+            "patterns": "/patterns"
+        },
+        "dependencies": [],  # No dependencies
+        "provides_to": ["storage-services", "text-processors", "validation-services"],
+
+        # OPERATIONAL INFO
+        "resource_requirements": {
+            "cpu": "low",
+            "memory": "50MB",
+            "disk": "none"
+        },
+        "scaling": {
+            "can_scale_horizontal": True,
+            "max_instances": 50,
+            "startup_time": "3s"
+        },
+
+        # PROCESSING CHARACTERISTICS
+        "processing_type": "transformation",
+        "data_transformation": "text_modification",
+        "typical_use_cases": [
+            "Text case conversion",
+            "String manipulation",
+            "Data preprocessing",
+            "Format standardization"
+        ],
+        "performance": {
+            "typical_response_time": "< 100ms",
+            "max_text_length": 10000,
+            "concurrent_requests": 100
         }
     }
 

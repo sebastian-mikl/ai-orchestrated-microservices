@@ -1,4 +1,3 @@
-# nodes/data-validator/app.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ValidationError
 import re
@@ -11,14 +10,135 @@ from email_validator import validate_email, EmailNotValidError
 import requests
 import asyncio
 from contextlib import asynccontextmanager
+import time
+import threading
+import asyncio
+import time
+from contextlib import asynccontextmanager
+
+async def wait_for_service_registry(max_wait_time: int = 60) -> bool:
+    """Wait for service registry to be available"""
+    start_time = time.time()
+
+    while time.time() - start_time < max_wait_time:
+        try:
+            response = requests.get("http://service-registry:8000/health", timeout=5)
+            if response.status_code == 200:
+                print("Service registry is ready")
+                return True
+        except requests.exceptions.RequestException:
+            pass
+
+        print("Waiting for service registry...")
+        await asyncio.sleep(2)
+
+    print("Service registry not available after waiting")
+    return False
+
+
+async def register_with_service_registry():
+    """Register this service with the service registry"""
+    if not await wait_for_service_registry():
+        print("WARNING: Service registry not available, skipping registration")
+        return False
+
+    try:
+        # Get our own service info
+        info_response = requests.get("http://localhost:8000/info", timeout=5)
+        if info_response.status_code != 200:
+            print(f"Failed to get service info: {info_response.status_code}")
+            return False
+
+        info_data = info_response.json()
+
+        # Create registration payload
+        registration_data = {
+            "node_id": info_data["node_id"],
+            "url": f"http://{info_data['node_id']}:8000",
+            "capabilities": [
+                {
+                    "name": cap,
+                    "description": f"Service capability: {cap}",
+                    "input_format": info_data.get("input_format", "any_data"),
+                    "output_format": info_data.get("output_format", "result"),
+                    "examples": []
+                } for cap in info_data.get("capabilities", [])
+            ],
+            "description": info_data.get("description", "Auto-registered service"),
+            "tags": info_data.get("tags", []),
+            "interaction_patterns": info_data.get("interaction_patterns", [])
+        }
+
+        # Register with service registry
+        registry_response = requests.post(
+            "http://service-registry:8000/register",
+            json=registration_data,
+            timeout=10
+        )
+
+        if registry_response.status_code == 200:
+            print(f"Successfully registered {info_data['node_id']} with service registry")
+            return True
+        else:
+            print(f"Failed to register: {registry_response.status_code}")
+            print(f"Response: {registry_response.text}")
+            return False
+
+    except Exception as e:
+        print(f"Registration failed: {e}")
+        return False
+
+
+async def unregister_from_service_registry():
+    """Unregister this service on shutdown"""
+    try:
+        info_response = requests.get("http://localhost:8000/info", timeout=5)
+        if info_response.status_code == 200:
+            info_data = info_response.json()
+            requests.delete(
+                f"http://service-registry:8000/unregister/{info_data['node_id']}",
+                timeout=5
+            )
+            print(f"Unregistered {info_data['node_id']}")
+    except Exception as e:
+        print(f"Unregistration failed: {e}")
+
+
+# Replace the lifespan function in echo-node with this:
+
+import threading
+
+
+def delayed_registration():
+    """Run registration in a separate thread after server starts"""
+    import time
+    import asyncio
+
+    # Wait longer for the HTTP server to be ready
+    time.sleep(5)
+
+    # Run the async registration function
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(register_with_service_registry())
+    loop.close()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup - register with service registry
-    await register_with_service_registry()
-    yield
-    # Shutdown - could add unregistration here
+    # Startup
+    print("🚀 Echo Node starting up...")
+
+    # Start registration in background thread AFTER server starts
+    registration_thread = threading.Thread(target=delayed_registration, daemon=True)
+    registration_thread.start()
+
+    yield  # Service runs here
+
+    # Shutdown
+    print("🛑 Echo Node shutting down...")
+
+
 
 
 async def register_with_service_registry():
@@ -193,18 +313,102 @@ async def get_contract():
     }
 
 
+# Replace the /info endpoint in nodes/data-validator/app.py
+
 @app.get("/info")
 async def node_info():
+    """Standardized service discovery information for Data Validator"""
     return {
+        # REQUIRED FIELDS
         "node_id": "data-validator",
-        "capabilities": ["email_validation", "phone_validation", "schema_validation", "business_rules",
-                         "format_validation", "range_validation"],
-        "description": "Validates data against various formats and business rules",
+        "version": "1.0.0",
+        "status": "healthy",
+        "description": "Validates data against various formats, schemas, and business rules with detailed error reporting",
+
+        # CAPABILITY DISCOVERY
+        "capabilities": [
+            "data_validation",
+            "email_validation",
+            "phone_validation",
+            "schema_validation",
+            "business_rules_validation",
+            "format_validation",
+            "range_validation"
+        ],
+        "tags": ["validation", "data", "verification", "quality"],
+
+        # DATA CONTRACTS
         "input_format": "any_data",
         "output_format": "validation_result",
+        "supported_operations": ["validate", "clean", "normalize", "score"],
+
+        # INTERACTION PATTERNS
         "interaction_patterns": ["synchronous_stateless"],
-        "supported_validations": ["email", "phone", "json_schema", "business_rules", "format", "range"],
-        "tags": ["validation", "data", "verification"]
+        "pattern_interfaces": {
+            "synchronous_stateless": {
+                "inputs": {
+                    "data": "any",
+                    "validation_type": "string",
+                    "schema": "object",
+                    "rules": "object"
+                },
+                "outputs": {
+                    "is_valid": "boolean",
+                    "validation_errors": "array",
+                    "cleaned_data": "any",
+                    "validation_score": "float"
+                },
+                "parameters": {
+                    "validation_type": {
+                        "type": "string",
+                        "options": ["email", "phone", "json_schema", "business_rules", "format", "range"],
+                        "default": "format"
+                    }
+                }
+            }
+        },
+
+        # SERVICE METADATA
+        "endpoints": {
+            "health": "/health",
+            "process": "/process",
+            "execute": "/execute",
+            "contract": "/contract",
+            "info": "/info",
+            "validation-types": "/validation-types"
+        },
+        "dependencies": [],  # No dependencies
+        "provides_to": ["storage-services", "file-processors", "notification-services"],
+
+        # OPERATIONAL INFO
+        "resource_requirements": {
+            "cpu": "medium",
+            "memory": "128MB",
+            "disk": "none"
+        },
+        "scaling": {
+            "can_scale_horizontal": True,
+            "max_instances": 20,
+            "startup_time": "4s"
+        },
+
+        # PROCESSING CHARACTERISTICS
+        "processing_type": "validation",
+        "data_transformation": "validation_with_cleaning",
+        "typical_use_cases": [
+            "Input validation",
+            "Data quality checks",
+            "Format verification",
+            "Business rule enforcement"
+        ],
+        "validation_capabilities": {
+            "supported_formats": ["email", "phone", "url", "date", "credit_card"],
+            "schema_types": ["json_schema"],
+            "business_rules": ["min_age", "required_fields", "max_length", "allowed_values"],
+            "output_scoring": True,
+            "error_details": True,
+            "data_cleaning": True
+        }
     }
 
 

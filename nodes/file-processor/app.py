@@ -1,4 +1,4 @@
-# nodes/file-processor/app.py
+# Keep only these imports at the top:
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import json
@@ -7,9 +7,79 @@ import xml.etree.ElementTree as ET
 import base64
 import io
 from typing import List, Dict, Any, Optional
+import threading
+import asyncio
+import time
+import requests
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="File Processor Service", description="Processes and converts files between formats")
+def delayed_registration():
+    """Run registration in a separate thread after server starts"""
+    time.sleep(5)
 
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(register_with_service_registry())
+    loop.close()
+
+
+async def register_with_service_registry():
+    """Register this service with the service registry"""
+    try:
+        await asyncio.sleep(5)
+
+        info_response = requests.get("http://localhost:8000/info", timeout=5)
+        if info_response.status_code == 200:
+            info_data = info_response.json()
+
+            registration_data = {
+                "node_id": info_data["node_id"],
+                "url": f"http://{info_data['node_id']}:8000",
+                "capabilities": [
+                    {
+                        "name": cap,
+                        "description": f"Service capability: {cap}",
+                        "input_format": info_data.get("input_format", "any_data"),
+                        "output_format": info_data.get("output_format", "json_response"),
+                        "examples": []
+                    } for cap in info_data.get("capabilities", [])
+                ],
+                "description": info_data.get("description", "File Processor service"),  # Not External API service
+                "tags": info_data.get("tags", []),
+                "interaction_patterns": info_data.get("interaction_patterns", [])
+            }
+
+            registry_response = requests.post(
+                "http://service-registry:8000/register",
+                json=registration_data,
+                timeout=10
+            )
+
+            if registry_response.status_code == 200:
+                # In register_with_service_registry(), change this line:
+                print(
+                    "Successfully registered file-processor with service registry")  # Not external-api
+            else:
+                print(f"Failed to register: {registry_response.status_code}")
+
+    except Exception as e:
+        print(f"Registration failed: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("File Processor service starting up...")  # Not External API
+    registration_thread = threading.Thread(target=delayed_registration, daemon=True)
+    registration_thread.start()
+    yield
+    print("File Processor service shutting down...")
+
+# Update FastAPI app initialization
+app = FastAPI(
+    title="file-processor",  # Not external-api
+    description="processes and converts files",
+    lifespan=lifespan
+)
 
 class NodeRequest(BaseModel):
     data: str
@@ -127,16 +197,105 @@ async def get_contract():
     }
 
 
+# Replace the /info endpoint in nodes/file-processor/app.py
+
 @app.get("/info")
 async def node_info():
+    """Standardized service discovery information for File Processor"""
     return {
+        # REQUIRED FIELDS
         "node_id": "file-processor",
-        "capabilities": ["parse_csv", "parse_json", "parse_xml", "convert_formats"],
-        "description": "Processes and converts files between different formats",
+        "version": "1.0.0",
+        "status": "healthy",
+        "description": "Processes and converts files between CSV, JSON, XML, and TXT formats with validation",
+
+        # CAPABILITY DISCOVERY
+        "capabilities": [
+            "file_processing",
+            "format_conversion",
+            "csv_parsing",
+            "json_parsing",
+            "xml_parsing",
+            "text_parsing",
+            "data_structuring"
+        ],
+        "tags": ["file", "conversion", "parsing", "data", "format"],
+
+        # DATA CONTRACTS
         "input_format": "base64_file",
         "output_format": "structured_data",
+        "supported_operations": ["parse", "convert", "validate", "structure"],
+
+        # INTERACTION PATTERNS
         "interaction_patterns": ["synchronous_stateless"],
-        "supported_formats": ["csv", "json", "xml", "txt"]
+        "pattern_interfaces": {
+            "synchronous_stateless": {
+                "inputs": {
+                    "file_content": "string",
+                    "input_format": "string",
+                    "output_format": "string"
+                },
+                "outputs": {
+                    "parsed_data": "json_array",
+                    "row_count": "integer",
+                    "validation_errors": "array"
+                },
+                "parameters": {
+                    "input_format": {
+                        "type": "string",
+                        "options": ["csv", "json", "xml", "txt"],
+                        "default": "csv"
+                    },
+                    "output_format": {
+                        "type": "string",
+                        "options": ["json", "csv", "structured_data"],
+                        "default": "json"
+                    }
+                }
+            }
+        },
+
+        # SERVICE METADATA
+        "endpoints": {
+            "health": "/health",
+            "process": "/process",
+            "execute": "/execute",
+            "contract": "/contract",
+            "info": "/info",
+            "process/csv": "/process/csv"
+        },
+        "dependencies": [],  # No dependencies
+        "provides_to": ["validation-services", "storage-services", "api-services"],
+
+        # OPERATIONAL INFO
+        "resource_requirements": {
+            "cpu": "high",
+            "memory": "256MB",
+            "disk": "temporary"
+        },
+        "scaling": {
+            "can_scale_horizontal": True,
+            "max_instances": 10,
+            "startup_time": "6s"
+        },
+
+        # PROCESSING CHARACTERISTICS
+        "processing_type": "conversion",
+        "data_transformation": "structured_conversion",
+        "typical_use_cases": [
+            "File format conversion",
+            "Data import/export",
+            "Legacy data migration",
+            "Batch file processing"
+        ],
+        "file_capabilities": {
+            "supported_input_formats": ["csv", "json", "xml", "txt"],
+            "supported_output_formats": ["json_array", "structured_data"],
+            "max_file_size": "10MB",
+            "encoding_support": ["utf-8"],
+            "validation_included": True,
+            "error_reporting": "detailed"
+        }
     }
 
 

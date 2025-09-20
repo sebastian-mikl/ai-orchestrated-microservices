@@ -1,16 +1,86 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, ValidationError
+from typing import Dict, Any, Optional, List
 import requests
-import os
 
-app = FastAPI(title="Echo Node", description="Receives input and can forward to next node")
+import threading
+import asyncio
+import time
+from contextlib import asynccontextmanager
 
 
+def delayed_registration():
+    """Run registration in a separate thread after server starts"""
+    time.sleep(5)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(register_with_service_registry())
+    loop.close()
+
+
+async def register_with_service_registry():
+    """Register this service with the service registry"""
+    try:
+        await asyncio.sleep(5)
+
+        info_response = requests.get("http://localhost:8000/info", timeout=5)
+        if info_response.status_code == 200:
+            info_data = info_response.json()
+
+            registration_data = {
+                "node_id": info_data["node_id"],
+                "url": f"http://{info_data['node_id']}:8000",
+                "capabilities": [
+                    {
+                        "name": cap,
+                        "description": f"Service capability: {cap}",
+                        "input_format": info_data.get("input_format", "any_data"),
+                        "output_format": info_data.get("output_format", "result"),
+                        "examples": []
+                    } for cap in info_data.get("capabilities", [])
+                ],
+                "description": info_data.get("description", "Auto-registered service"),
+                "tags": info_data.get("tags", []),
+                "interaction_patterns": info_data.get("interaction_patterns", [])
+            }
+
+            registry_response = requests.post(
+                "http://service-registry:8000/register",
+                json=registration_data,
+                timeout=10
+            )
+
+            if registry_response.status_code == 200:
+                print(f"Successfully registered echo-node with service registry")
+            else:
+                print(f"Failed to register: {registry_response.status_code}")
+
+    except Exception as e:
+        print(f"Registration failed: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Echo Node starting up...")
+    registration_thread = threading.Thread(target=delayed_registration, daemon=True)
+    registration_thread.start()
+    yield
+    print("Echo Node shutting down...")
+
+
+app = FastAPI(
+    title="echo node",
+    description="prints text",
+    lifespan=lifespan
+)
+
+
+# Modelsstartup
 class NodeRequest(BaseModel):
     data: str
-    next_node: str = None
+    next_node: Optional[str] = None
     metadata: dict = {}
-
 
 class NodeResponse(BaseModel):
     node_id: str = "echo-node"
@@ -18,7 +88,7 @@ class NodeResponse(BaseModel):
     status: str
     metadata: dict = {}
 
-
+# Endpoints
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "node_type": "echo"}
@@ -92,16 +162,25 @@ async def get_contract():
         }
     }
 
-
 @app.get("/info")
 async def node_info():
+    """Standardized service discovery information for Echo Node"""
     return {
         "node_id": "echo-node",
-        "capabilities": ["receive", "forward", "passthrough"],
-        "description": "Echoes input data and forwards to next node",
+        "version": "1.0.0",
+        "status": "healthy",
+        "description": "Receives input and forwards data unchanged - useful for testing and debugging chains",
+        "capabilities": [
+            "passthrough",
+            "echo",
+            "forward",
+            "receive",
+            "chain_testing"
+        ],
+        "tags": ["utility", "passthrough", "testing", "debugging"],
         "input_format": "string",
         "output_format": "string",
-        # NEW: Pattern declaration
+        "supported_operations": ["echo", "passthrough"],
         "interaction_patterns": ["synchronous_stateless"],
         "pattern_interfaces": {
             "synchronous_stateless": {
@@ -109,34 +188,41 @@ async def node_info():
                 "outputs": {"text": "string"},
                 "parameters": {}
             }
-        }
+        },
+        "endpoints": {
+            "health": "/health",
+            "process": "/process",
+            "execute": "/execute",
+            "contract": "/contract",
+            "info": "/info",
+            "patterns": "/patterns"
+        },
+        "dependencies": [],
+        "provides_to": ["any"],
+        "resource_requirements": {
+            "cpu": "low",
+            "memory": "10MB",
+            "disk": "none"
+        },
+        "scaling": {
+            "can_scale_horizontal": True,
+            "max_instances": 100,
+            "startup_time": "2s"
+        },
+        "processing_type": "passthrough",
+        "data_transformation": "none",
+        "typical_use_cases": [
+            "Chain testing",
+            "Data forwarding",
+            "Workflow debugging",
+            "Simple passthrough operations"
+        ]
     }
-
-
-@app.get("/patterns")
-async def get_supported_patterns():
-    """New endpoint to explicitly expose pattern support"""
-    return {
-        "node_id": "echo-node",
-        "supported_patterns": ["synchronous_stateless"],
-        "pattern_details": {
-            "synchronous_stateless": {
-                "description": "Simple passthrough: input → echo → output",
-                "interface": "function_call",
-                "typical_duration": "milliseconds",
-                "inputs": {"text": "string"},
-                "outputs": {"text": "string"},
-                "parameters": {}
-            }
-        }
-    }
-
 
 @app.post("/process")
 async def process_data(request: NodeRequest):
     print(f"Echo Node received: {request.data}")
 
-    # Process the data (in this case, just echo it)
     processed_data = request.data
 
     response = NodeResponse(
@@ -150,12 +236,11 @@ async def process_data(request: NodeRequest):
         }
     )
 
-    # If there's a next node, forward the data
     if request.next_node:
         try:
             forward_request = NodeRequest(
                 data=processed_data,
-                next_node=None,  # Let the orchestrator handle chaining
+                next_node=None,
                 metadata=response.metadata
             )
 
@@ -164,7 +249,7 @@ async def process_data(request: NodeRequest):
 
             forward_response = requests.post(
                 next_url,
-                json=forward_request.dict(),
+                json=forward_request.model_dump(),
                 timeout=10
             )
 
@@ -181,21 +266,14 @@ async def process_data(request: NodeRequest):
 
     return response
 
-
-# NEW: Pattern-specific endpoint for synchronous_stateless
 @app.post("/execute")
-async def execute_synchronous_stateless(
-        inputs: dict,
-        parameters: dict = {}
-):
+async def execute_synchronous_stateless(inputs: dict, parameters: dict = {}):
     """Direct pattern-based execution for synchronous_stateless"""
-
     if "text" not in inputs:
         return {"error": "Missing required input: text", "pattern": "synchronous_stateless"}
 
     text = inputs["text"]
 
-    # Echo the text unchanged
     return {
         "outputs": {"text": text},
         "metadata": {
@@ -206,8 +284,6 @@ async def execute_synchronous_stateless(
         }
     }
 
-
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
